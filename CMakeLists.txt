@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(lms1xx)
+project(sick_lms)
 
 # Build ROS-independent library.
 find_package(console_bridge REQUIRED)
