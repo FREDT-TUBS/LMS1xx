@@ -26,6 +26,8 @@
 #include <LMS1xx/LMS1xx.h>
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
+#include <limits>
+#include <string>
 
 #define DEG2RAD M_PI/180.0
 
@@ -42,6 +44,7 @@ int main(int argc, char **argv)
   std::string host;
   std::string frame_id;
   std::string scan_topic;
+  bool inf_range;
   int port;
 
   ros::init(argc, argv, "lms1xx");
@@ -51,6 +54,7 @@ int main(int argc, char **argv)
   n.param<std::string>("host", host, "192.168.1.2");
   n.param<std::string>("frame_id", frame_id, "laser");
   n.param<std::string>("scan_topic", scan_topic, "scan");
+  n.param<bool>("publish_min_range_as_inf", inf_range, false);
   n.param<int>("port", port, 2111);
 
   ros::Publisher scan_pub = nh.advertise<sensor_msgs::LaserScan>(scan_topic, 1);
@@ -90,15 +94,15 @@ int main(int argc, char **argv)
     scan_msg.range_min = 0.01;
     scan_msg.range_max = 20.0;
     scan_msg.scan_time = 100.0 / cfg.scaningFrequency;
-    scan_msg.angle_increment = (double)outputRange.angleResolution / 10000.0 * DEG2RAD;
-    scan_msg.angle_min = (double)outputRange.startAngle / 10000.0 * DEG2RAD - M_PI / 2;
-    scan_msg.angle_max = (double)outputRange.stopAngle / 10000.0 * DEG2RAD - M_PI / 2;
+    scan_msg.angle_increment = static_cast<double>(outputRange.angleResolution / 10000.0 * DEG2RAD);
+    scan_msg.angle_min = static_cast<double>(outputRange.startAngle / 10000.0 * DEG2RAD - M_PI / 2);
+    scan_msg.angle_max = static_cast<double>(outputRange.stopAngle / 10000.0 * DEG2RAD - M_PI / 2);
 
     ROS_DEBUG_STREAM("Device resolution is " << (double)outputRange.angleResolution / 10000.0 << " degrees.");
     ROS_DEBUG_STREAM("Device frequency is " << (double)cfg.scaningFrequency / 100.0 << " Hz");
 
     int angle_range = outputRange.stopAngle - outputRange.startAngle;
-    int num_values = angle_range / outputRange.angleResolution ;
+    int num_values = angle_range / outputRange.angleResolution;
     if (angle_range % outputRange.angleResolution == 0)
     {
       // Include endpoint
@@ -131,8 +135,8 @@ int main(int argc, char **argv)
     ROS_DEBUG("Waiting for ready status.");
     ros::Time ready_status_timeout = ros::Time::now() + ros::Duration(5);
 
-    //while(1)
-    //{
+    // while(1)
+    // {
     status_t stat = laser.queryStatus();
     ros::Duration(1.0).sleep();
     if (stat != ready_for_measurement)
@@ -163,7 +167,7 @@ int main(int argc, char **argv)
     }*/
 
     ROS_DEBUG("Starting device.");
-    laser.startDevice(); // Log out to properly re-enable system after config
+    laser.startDevice();  // Log out to properly re-enable system after config
 
     ROS_DEBUG("Commanding continuous measurements.");
     laser.scanContinous(1);
@@ -181,7 +185,16 @@ int main(int argc, char **argv)
       {
         for (int i = 0; i < data.dist_len1; i++)
         {
-          scan_msg.ranges[i] = data.dist1[i] * 0.001;
+          float range_data = data.dist1[i] * 0.001;
+
+          if (inf_range && range_data < scan_msg.range_min)
+          {
+            scan_msg.ranges[i] = std::numeric_limits<float>::infinity();
+          }
+          else
+          {
+            scan_msg.ranges[i] = range_data;
+          }
         }
 
         for (int i = 0; i < data.rssi_len1; i++)
